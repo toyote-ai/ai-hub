@@ -124,13 +124,23 @@ export default function PlayGame({ params }: { params: Promise<{ id: string }> }
   const watchRewardAd = () => {
     setRewardStatus("playing");
     setTimeout(async () => {
-      setRewardStatus("claimed");
       if (user) {
-        const { data: pointData } = await supabase.from('user_points').select('total_points').eq('user_id', user.id).single();
+        const { data: pointData, error: pointFetchError } = await supabase.from('user_points').select('total_points').eq('user_id', user.id).single();
+        if (pointFetchError) {
+          alert(`ポイントデータ取得エラー: ${pointFetchError.message}`);
+          setRewardStatus("idle");
+          return;
+        }
         if (pointData) {
-          await supabase.from('user_points').update({ total_points: pointData.total_points + 10 }).eq('user_id', user.id);
+          const { error: pointUpdateError } = await supabase.from('user_points').update({ total_points: pointData.total_points + 10 }).eq('user_id', user.id);
+          if (pointUpdateError) {
+            alert(`ポイント付与エラー: ${pointUpdateError.message}`);
+            setRewardStatus("idle");
+            return;
+          }
         }
       }
+      setRewardStatus("claimed");
     }, 3000);
   };
 
@@ -146,29 +156,66 @@ export default function PlayGame({ params }: { params: Promise<{ id: string }> }
 
         if (user) {
           try {
-            const { data: existingLog } = await supabase.from('play_logs').select('*').eq('game_id', gameId).eq('player_id', user.id).single();
-            let isFirstPlay = false; let isHighScore = false;
+            // 💡 maybeSingle() を使用し、0件時はエラーではなく null を取得するように厳密化
+            const { data: existingLog, error: selectError } = await supabase
+              .from('play_logs')
+              .select('*')
+              .eq('game_id', gameId)
+              .eq('player_id', user.id)
+              .maybeSingle();
+            
+            if (selectError) throw new Error(`[データ確認失敗] ${selectError.message}`);
+
+            let isFirstPlay = false; 
+            let isHighScore = false;
 
             if (!existingLog) {
-              isFirstPlay = true; isHighScore = true;
+              isFirstPlay = true; 
+              isHighScore = true;
               const playerName = user.user_metadata?.username || "名無しプレイヤー";
-              await supabase.from('play_logs').insert([{ game_id: gameId, player_id: user.id, player_name: playerName, score: score }]);
               
-              const { data: pointData } = await supabase.from('user_points').select('total_points').eq('user_id', user.id).single();
+              const { error: insertLogError } = await supabase
+                .from('play_logs')
+                .insert([{ game_id: gameId, player_id: user.id, player_name: playerName, score: score }]);
+              
+              if (insertLogError) throw new Error(`[ランキング登録失敗] ${insertLogError.message}`);
+              
+              const { data: pointData, error: pointSelectError } = await supabase
+                .from('user_points')
+                .select('total_points')
+                .eq('user_id', user.id)
+                .maybeSingle();
+                
+              if (pointSelectError) throw new Error(`[ポイント確認失敗] ${pointSelectError.message}`);
+              
               if (pointData) { 
-                await supabase.from('user_points').update({ total_points: pointData.total_points + 5 }).eq('user_id', user.id); 
+                const { error: pointUpdateError } = await supabase
+                  .from('user_points')
+                  .update({ total_points: pointData.total_points + 5 })
+                  .eq('user_id', user.id);
+                if (pointUpdateError) throw new Error(`[ポイント更新失敗] ${pointUpdateError.message}`);
               } else { 
-                await supabase.from('user_points').insert([{ user_id: user.id, total_points: 5 }]); 
+                const { error: pointInsertError } = await supabase
+                  .from('user_points')
+                  .insert([{ user_id: user.id, total_points: 5 }]); 
+                if (pointInsertError) throw new Error(`[ポイント新規作成失敗] ${pointInsertError.message}`);
               }
             } else {
               if (score > existingLog.score) {
                 isHighScore = true;
-                await supabase.from('play_logs').update({ score: score, created_at: new Date().toISOString() }).eq('id', existingLog.id);
+                const { error: updateLogError } = await supabase
+                  .from('play_logs')
+                  .update({ score: score, created_at: new Date().toISOString() })
+                  .eq('id', existingLog.id);
+                
+                if (updateLogError) throw new Error(`[ハイスコア更新失敗] ${updateLogError.message}`);
               }
             }
             setResult(prev => prev ? { ...prev, detailsLoaded: true, isFirstPlay, isHighScore } : null);
             fetchRankings(); 
-          } catch (error: any) { setResult(prev => prev ? { ...prev, detailsLoaded: true, error: error.message } : null); }
+          } catch (error: any) { 
+            setResult(prev => prev ? { ...prev, detailsLoaded: true, error: error.message } : null); 
+          }
         } else {
           setResult(prev => prev ? { ...prev, detailsLoaded: true } : null);
         }
@@ -191,7 +238,6 @@ export default function PlayGame({ params }: { params: Promise<{ id: string }> }
           <div className="flex items-center justify-between md:justify-start md:gap-6 w-full">
             <p className="text-sm md:text-lg font-bold text-gray-600 flex items-center gap-1">
               <span className="text-base md:text-xl">👤</span> <span>クリエイター: </span>
-              {/* 🌟 修正：ただのテキストから、アカウントページへ飛べるリンクに変更！ */}
               <Link 
                 href={`/user/${game.user_id}`} 
                 className="text-black font-black hover:bg-[#FFEF5E] hover:underline underline-offset-2 px-1 rounded transition-colors"
@@ -263,7 +309,7 @@ export default function PlayGame({ params }: { params: Promise<{ id: string }> }
                 </div>
                 
                 {!result.detailsLoaded && <p className="text-sm font-bold text-gray-600 mb-4 flex items-center justify-center gap-2"><span className="animate-spin text-lg">⏳</span> 記録を保存中...</p>}
-                {result.error && <p className="text-xs font-bold text-red-500 mb-4 border-2 border-red-500 p-2 rounded-lg">保存エラー: {result.error}</p>}
+                {result.error && <p className="text-xs font-bold text-red-500 mb-4 border-2 border-red-500 p-2 rounded-lg break-all">保存エラー: {result.error}</p>}
                 
                 {result.detailsLoaded && !result.error && (
                   <div className="space-y-3 mb-5">
