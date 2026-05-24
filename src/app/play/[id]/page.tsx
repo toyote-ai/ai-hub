@@ -226,7 +226,7 @@ export default function PlayGame({ params }: { params: Promise<{ id: string }> }
             <iframe 
               srcDoc={game.code} 
               className={`w-full h-full border-none absolute inset-0 overflow-hidden transition-opacity ${result?.show ? 'opacity-10 pointer-events-none' : 'opacity-100'}`} 
-              sandbox="allow-scripts allow-same-origin allow-popups"
+              sandbox="allow-scripts"
               scrolling="no"
             />
           )}
@@ -251,7 +251,7 @@ export default function PlayGame({ params }: { params: Promise<{ id: string }> }
                 プレイ！
               </button>
             </div>
-          ) }
+          )}
 
           {result?.show && (
             <div className="absolute inset-0 z-20 flex items-center justify-center p-3 bg-black/60 backdrop-blur-sm transition-all animate-fade-in">

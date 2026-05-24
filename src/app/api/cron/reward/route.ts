@@ -6,7 +6,9 @@ export async function GET(request: Request) {
   try {
     // 安全チェック：Vercelからの正式な呼び出しかどうかを確認
     const authHeader = request.headers.get('authorization');
-    if (process.env.CRON_SECRET && authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+    
+    // 💡 修正：CRON_SECRETが未設定、またはヘッダーのトークンが一致しない場合は即座にアクセスを拒否
+    if (!process.env.CRON_SECRET || authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
