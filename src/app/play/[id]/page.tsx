@@ -156,12 +156,14 @@ export default function PlayGame({ params }: { params: Promise<{ id: string }> }
 
         if (user) {
           try {
-            // 💡 maybeSingle() を使用し、0件時はエラーではなく null を取得するように厳密化
-            const { data: existingLog, error: selectError } = await supabase
+            // 💡 修正：ハイスコア判定・初プレイ判定のために、そのユーザーの「過去最高スコアレコード」を1件だけ取得
+            const { data: highestLog, error: selectError } = await supabase
               .from('play_logs')
-              .select('*')
+              .select('score')
               .eq('game_id', gameId)
               .eq('player_id', user.id)
+              .order('score', { ascending: false })
+              .limit(1)
               .maybeSingle();
             
             if (selectError) throw new Error(`[データ確認失敗] ${selectError.message}`);
@@ -169,17 +171,23 @@ export default function PlayGame({ params }: { params: Promise<{ id: string }> }
             let isFirstPlay = false; 
             let isHighScore = false;
 
-            if (!existingLog) {
+            if (!highestLog) {
               isFirstPlay = true; 
               isHighScore = true;
-              const playerName = user.user_metadata?.username || "名無しプレイヤー";
-              
-              const { error: insertLogError } = await supabase
-                .from('play_logs')
-                .insert([{ game_id: gameId, player_id: user.id, player_name: playerName, score: score }]);
-              
-              if (insertLogError) throw new Error(`[ランキング登録失敗] ${insertLogError.message}`);
-              
+            } else if (score > highestLog.score) {
+              isHighScore = true;
+            }
+
+            // 💡 改善：生涯最高スコアに関係なく、今日の日付のデータとして「毎回新規追加（insert）」する
+            const playerName = user.user_metadata?.username || "名無しプレイヤー";
+            const { error: insertLogError } = await supabase
+              .from('play_logs')
+              .insert([{ game_id: gameId, player_id: user.id, player_name: playerName, score: score }]);
+            
+            if (insertLogError) throw new Error(`[ランキング登録失敗] ${insertLogError.message}`);
+            
+            // 初プレイ時のボーナスポイント付与処理（初回のみ実行）
+            if (isFirstPlay) {
               const { data: pointData, error: pointSelectError } = await supabase
                 .from('user_points')
                 .select('total_points')
@@ -200,17 +208,8 @@ export default function PlayGame({ params }: { params: Promise<{ id: string }> }
                   .insert([{ user_id: user.id, total_points: 5 }]); 
                 if (pointInsertError) throw new Error(`[ポイント新規作成失敗] ${pointInsertError.message}`);
               }
-            } else {
-              if (score > existingLog.score) {
-                isHighScore = true;
-                const { error: updateLogError } = await supabase
-                  .from('play_logs')
-                  .update({ score: score, created_at: new Date().toISOString() })
-                  .eq('id', existingLog.id);
-                
-                if (updateLogError) throw new Error(`[ハイスコア更新失敗] ${updateLogError.message}`);
-              }
             }
+
             setResult(prev => prev ? { ...prev, detailsLoaded: true, isFirstPlay, isHighScore } : null);
             fetchRankings(); 
           } catch (error: any) { 
@@ -319,7 +318,7 @@ export default function PlayGame({ params }: { params: Promise<{ id: string }> }
                         <p className="text-lg tracking-widest">💰 +5 pt</p>
                       </div>
                     )}
-                    {result.isHighScore && !result.isFirstPlay && (
+                    {result.isHighScore && (
                       <div className="bg-orange-100 border-4 border-orange-500 text-orange-600 font-black text-sm py-1.5 px-3 rounded-xl inline-block transform rotate-1 shadow-[3px_3px_0px_0px_rgba(249,115,22,1)]">
                         🔥 自己ベスト更新！
                       </div>
