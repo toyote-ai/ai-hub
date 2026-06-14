@@ -10,7 +10,7 @@ export default function Guide() {
 【必須要件】
 1. HTMLファイル1つ（CSS/JS込み）で完全に完結させること。
 2. ゲームの世界観やジャンルに合わせて、洗練されたデザイン（CSS）を作り込み、見栄えの良いUIにすること。
-3. 以下のパスのキャラクター画像などを適宜デスクトップ風に表示すること。
+3. キャラクター画像が使用したい場合は以下のパスのキャラクター画像などを使用すること。
    - 男の子: /characters/boy.png
    - 青年: /characters/young_man.png
    - おじさん: /characters/middle_man.png
